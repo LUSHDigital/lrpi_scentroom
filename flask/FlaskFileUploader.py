@@ -114,6 +114,48 @@ def lightingEvent(col_hex_val):
     return scentroom_event.to_srt(str(uploads_dir))
 
 
+#Function to test dummy distance sensor activation
+@app.route('/start-test', methods=['POST'])
+def start_test():
+    if request.method == 'POST': 
+        if request.POST.get('state',''):
+            startPlayer()
+            return jsonify({'response': 200, 'start_test': True, 'description': 'Start track and lighting event', 'path': request.url})
+    
+    return jsonify({'response': 500, 'start_test': False, 'description': 'Could not trigger start-test', 'path': request.url})
+
+
+#Function to test dummy distance sensor deactivation
+@app.route('/end-test', methods=['POST'])
+def end_test():
+    if request.method == 'POST': 
+        if request.POST.get('state',''):
+            stopPlayer()
+            return jsonify({'response': 200, 'end_test': True, 'description': 'Stop track and lighting event', 'path': request.url})
+    
+    return jsonify({'response': 500, 'end_test': False, 'description': 'Could not trigger end-test', 'path': request.url})
+
+
+#Function to start audio player
+def startPlayer(self, path="/media/usb/uploads/01_scentroom.mp3", start_position=0):
+    postFields = { \
+        'trigger' : "start", \
+        'upload_path': str(path), \
+        'start_position': str(start_position), \
+    }
+    playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-trigger', json=postFields)
+    print("INFO: res from start: ", playerRes)
+
+
+#Function to stop audio player
+def stopPlayer(self):
+    postFields = { \
+        'trigger': "stop" \
+    }
+    playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-trigger', json=postFields)
+    print("INFO: res from stop: ", playerRes)
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     return jsonify({'response':404, 'description': 'Page Not Found' + str(e)})
