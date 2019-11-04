@@ -1,5 +1,4 @@
 version: '3'
-
 services:
   display:
     container_name: lushroom-display
