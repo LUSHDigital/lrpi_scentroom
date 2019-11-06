@@ -16,7 +16,6 @@ from time import sleep
 
 HOST = os.environ.get("BRICKD_HOST", "127.0.0.1")
 PORT = 4223
-_DISTANCE_THRESHOLD = 30 # in cm
 _DEBOUNCE_TIME = 500 # in ms
 
 def logger(message):
@@ -48,11 +47,11 @@ class DistanceSensor:
 
     def startCallbackSet(self):
         self.device.register_callback(self.device.CALLBACK_DISTANCE_REACHED, self.cb_distance_reached)
-        self.device.set_distance_callback_threshold("<", _DISTANCE_THRESHOLD*10, 0)
+        self.device.set_distance_callback_threshold("<", self.threshold_distance*10, 0)
 
     def stopCallbackSet(self):
         self.device.register_callback(self.device.CALLBACK_DISTANCE_REACHED, self.cb_distance_surpassed)
-        self.device.set_distance_callback_threshold(">", _DISTANCE_THRESHOLD*10, 0)
+        self.device.set_distance_callback_threshold(">", self.threshold_distance*10, 0)
 
     def poll(self):
         try:
@@ -82,7 +81,7 @@ class DistanceSensor:
             
 
             print("Polling the TF distance sensor for distance measurement... ")
-            print("Threshold distance is set to ", _DISTANCE_THRESHOLD, "cm")
+            print("Threshold distance is set to ", self.threshold_distance, "cm")
 
         except Exception as e:
             print("ERROR: There is a problem with the Distance Sensor!")

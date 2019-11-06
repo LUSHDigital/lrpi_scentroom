@@ -27,7 +27,7 @@ cors = CORS(app)
 
 # Restrict file types saved to uploads directory 
 ALLOWED_EXTENSIONS = set(['mp3', 'mp4', 'json'])
-THRESHOLD_DISTANCE = 150
+_THRESHOLD_DISTANCE = 150
 
 # Create upload directory to save files to
 uploads_dir = os.path.join('/media/usb/', 'uploads')
@@ -112,7 +112,7 @@ def upload_col():
 @app.route('/test-start', methods=['GET'])
 def testStart():
     if request.method == 'GET': 
-        test_distance_sensor = DistanceSensor(0) 
+        test_distance_sensor = DistanceSensor(None) 
         test_distance_sensor.triggerPlayer()  
         return jsonify({'response': 200, 'message': 'Test started!'})
 
@@ -122,7 +122,7 @@ def testStart():
 def testKill():
     if request.method == 'GET': 
          
-        test_distance_sensor = DistanceSensor(0) 
+        test_distance_sensor = DistanceSensor(None) 
         test_distance_sensor.stopPlayer()  
         return jsonify({'response': 200, 'message': 'Test ended!'})
 
@@ -146,6 +146,6 @@ def internal_server_error(e):
 if __name__ == '__main__':
     logger("Welcome to the Scentroom! Scentroom is a working title...")
     logger("Uploads directory is: " + uploads_dir)
-    distance_sensor = DistanceSensor(THRESHOLD_DISTANCE)
+    distance_sensor = DistanceSensor(_THRESHOLD_DISTANCE)
     app.run(port=os.environ.get("PORT", "5000"), host='0.0.0.0')
 
