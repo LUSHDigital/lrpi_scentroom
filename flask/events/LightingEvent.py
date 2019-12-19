@@ -8,10 +8,10 @@ _RGB_G_TUNING = 1.0
 _RGB_B_TUNING = 1.0
 _JSON_INDENT = 2
 
-class LightingEvent: 
+class LightingEvent:
 
     #set colour value on init
-    def __init__(self, col_val): 
+    def __init__(self, col_val):
         if col_val is not None:
             #convert hex value to rgb
             self.hex = col_val
@@ -37,7 +37,8 @@ class LightingEvent:
     #creates srt file with col val at path
     def to_srt(self, path, file_name=_CONSISTENT_SRT_NAME, hue=False, dmx=True):
 
-        if self.hsv_col_val is not None: 
+        print(str(self.hsv_col_val )+ " " +str(self.rgb_col_val) )
+        if (self.hsv_col_val is not None) or (self.rgb_col_val is not None):
             completeName = os.path.join(path, file_name + ".srt")
             #srt file for write operation
             srt_file = open(completeName, "w")
@@ -49,13 +50,13 @@ class LightingEvent:
             if hue:
                 srt_file.write("HUE1(" + self.hsv_col_val + ");\n")
             #srt DMX col val
-            if dmx: 
+            if dmx:
                 srt_file.write("DMX1(" + self.rgbw_col_val + ", " + self.rgb_col_val + ")\n")
             srt_file.close()
             return True
-        
+
         return False
-        
+
 
     #converts rgb values to rgbw
     def rgb_to_rgbw(self, Ri, Gi, Bi):

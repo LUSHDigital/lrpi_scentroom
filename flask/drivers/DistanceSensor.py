@@ -12,12 +12,16 @@ import requests
 from tinkerforge.ip_connection import IPConnection
 from tinkerforge.bricklet_distance_ir import BrickletDistanceIR
 from tinkerforge.bricklet_distance_ir_v2 import BrickletDistanceIRV2
+from tinkerforge.ip_connection import IPConnection # pylint: disable=import-error
+from tinkerforge.bricklet_dmx import BrickletDMX # pylint: disable=import-error
 from tf_device_ids import deviceIdentifiersList
 from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import threading
 import logging
 import Settings
+import random
+import numpy as np
 
 HOST = os.environ.get("BRICKD_HOST", "127.0.0.1")
 PORT = 4223
@@ -43,6 +47,9 @@ class DistanceSensor:
         self.scheduler = None
         self.counter = _DELAY
         self.distance = 200.0
+        self.dmx = None
+        self.dmxShow = False
+
 
         if dist:
             self.setThresholdFromSettings()
@@ -51,6 +58,56 @@ class DistanceSensor:
             self.poll()
         else:
             logger("Test distance sensor created")
+
+        self.initDMX()
+
+    def initDMX(self):
+        # configure Tinkerforge DMX
+        try:
+            self.ipcon.connect(HOST, PORT)
+
+            # Register Enumerate Callback
+            self.ipcon.register_callback(IPConnection.CALLBACK_ENUMERATE, self.cb_enumerate)
+
+            # Trigger Enumerate
+            self.ipcon.enumerate()
+
+            # Likely wait for the tinkerforge brickd to finish doing its thing
+            sleep(2)
+
+            if DEBUG:
+                print("Tinkerforge enumerated IDs", self.tfIDs)
+
+            dmxcount = 0
+            for tf in self.tfIDs:
+                # try:
+                if True:
+                    # print(len(tf[0]))
+
+                    if len(tf[0])<=3: # if the device UID is 3 characters it is a bricklet
+                        if tf[1] in self.deviceIDs:
+                            if VERBOSE:
+                                print(tf[0],tf[1], self.getIdentifier(tf))
+                        if tf[1] == 285: # DMX Bricklet
+                            if dmxcount == 0:
+                                print("Registering %s as slave DMX device for playing DMX frames" % tf[0])
+                                self.dmx = BrickletDMX(tf[0], self.ipcon)
+                                self.dmx.set_dmx_mode(self.dmx.DMX_MODE_MASTER)
+                                self.dmx.set_frame_duration(DMX_FRAME_DURATION)
+                                # channels = int((int(MAX_BRIGHTNESS)/255.0)*ones(512,)*255)
+                                # dmx.write_frame([255,255])
+                                sleep(1)
+                                # channels = int((int(MAX_BRIGHTNESS)/255.0)*zeros(512,)*255)
+                                # dmx.write_frame(channels)
+                            dmxcount += 1
+
+            if dmxcount < 1:
+                if LIGHTING_MSGS:
+                    print("No DMX devices found.")
+        except Exception as e:
+            print("Could not create connection to Tinkerforge DMX. DMX lighting is now disabled")
+            print("Error: ", e)
+            PLAY_DMX = False
 
     def setThresholdFromSettings(self):
         try:
@@ -85,15 +142,35 @@ class DistanceSensor:
 
         if self.triggered:
             self.counter = _DELAY
+            self.dmxShow = False
 
         elif not self.triggered:
             self.counter -= 1
-            if self.counter < 0:
+            if self.counter == 0:
                 print("Stopping player")
                 self.stopPlayer()
                 self.device.set_distance_callback_configuration(_ENTRY_CALLBACK_PERIOD, True, "x", 0, 0)
             if self.counter < 0:
                 self.counter = 0
+                self.dmxShow = True
+
+    def dmxPlay(self):
+        # print(str(self.dmxShow))
+        if self.dmxShow:
+            m = np.random.rand(1,512)
+            print(255*m)
+            # print(dir(self.dmx))
+            self.dmx.write_frame(255*m)
+        # self.dmx.write_frame([ int(0.65*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     int(0.40*MAX_BRIGHTNESS),
+        #                     0,0,0,int(0.40*MAX_BRIGHTNESS) ]))
 
     def poll(self):
 
@@ -135,6 +212,7 @@ class DistanceSensor:
                             'max_workers': '1'
                         }}, timezone="Europe/London")
                     self.scheduler.add_job(self.tick, 'interval', seconds=_TICK_TIME, misfire_grace_time=5  , max_instances=1, coalesce=False)
+                    self.scheduler.add_job(self.dmxPlay, 'interval', seconds=0.1, misfire_grace_time=5  , max_instances=1, coalesce=False)
                     self.scheduler.start(paused=False)
                     logging.getLogger('apscheduler').setLevel(logging.CRITICAL)
 
