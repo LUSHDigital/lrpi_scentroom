@@ -158,7 +158,7 @@ class DistanceSensor:
         # print(str(self.dmxShow))
         if self.dmxShow:
             m = np.random.rand(1,512)
-            print(255*m)
+            #print(255*m)
             # print(dir(self.dmx))
             self.dmx.write_frame(255*m)
         # self.dmx.write_frame([ int(0.65*MAX_BRIGHTNESS),

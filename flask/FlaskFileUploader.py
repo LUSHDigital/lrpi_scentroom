@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.DEBUG)
 # Need cors to resolve cors conflict
 cors = CORS(app)
 
-# Restrict file types saved to uploads directory 
+# Restrict file types saved to uploads directory
 ALLOWED_EXTENSIONS = set(['mp3', 'mp4', 'json'])
 _FALLBACK_THRESHOLD_DISTANCE = 145
 _JSON_INDENT = 2
@@ -78,7 +78,7 @@ def upload_file():
         if file.filename == '':
             #No file selected for uploading
             return jsonify({'response': 500, 'audio_saved': False, 'description': 'No file selected', 'path': request.url})
-        
+
         if file and allowed_file(file.filename):
             #Generate secure file name
             filename = secure_filename("01_scentroom." + get_extension(file.filename))
@@ -97,7 +97,7 @@ def upload_file():
             return jsonify({'response': 200, 'audio_saved': True, 'description': 'Audio Saved', 'path': request.url})
         else:
             return jsonify({'response': 500, 'audio_saved': False, 'description': 'File type not allowed - accepted types are mp3, JSON', 'path': request.url})
-    
+
     return jsonify({'response': 500, 'audio_saved': False, 'description': 'Could not save audio file', 'path': request.url})
 
 
@@ -105,15 +105,15 @@ def upload_file():
 # Handles POST request of colour value
 @app.route('/upload-colour', methods=['POST'])
 def upload_col():
-    if request.method == 'POST': 
-         
+    if request.method == 'POST':
+
         #Get col value from form data
         colour = request.form.get('colour')
 
         if colour is not None:
             if lightingEvent(colour):
                 return jsonify({'response' : 200, 'col_saved': True, 'description': 'Colour saved', 'path': request.url})
-        else:   
+        else:
             return jsonify({'response': 500, 'col_saved': False, 'description': 'Colour value non type', 'path': request.url})
 
     return jsonify({'response': 500, 'col_saved': False, 'description': 'Colour upload failed', 'path': request.url})
@@ -122,19 +122,19 @@ def upload_col():
 # Handles POST request of colour value
 @app.route('/test-start', methods=['GET'])
 def testStart():
-    if request.method == 'GET': 
-        test_distance_sensor = DistanceSensor(None) 
-        test_distance_sensor.triggerPlayer(test=True)  
+    if request.method == 'GET':
+        test_distance_sensor = DistanceSensor(None)
+        test_distance_sensor.triggerPlayer(test=True)
         return jsonify({'response': 200, 'message': 'Test started!'})
 
     return jsonify({'response': 500, 'error': 'Something went wrong when trying to START the test'})
 
 @app.route('/test-kill', methods=['GET'])
 def testKill():
-    if request.method == 'GET': 
-         
-        test_distance_sensor = DistanceSensor(None) 
-        test_distance_sensor.stopPlayer(test=True)  
+    if request.method == 'GET':
+
+        test_distance_sensor = DistanceSensor(None)
+        test_distance_sensor.stopPlayer(test=True)
         return jsonify({'response': 200, 'message': 'Test ended!'})
 
     return jsonify({'response': 500, 'error': 'Something went wrong when trying to KILL the test'})
@@ -142,8 +142,8 @@ def testKill():
 
 @app.route('/status', methods=['GET'])
 def status():
-    if request.method == 'GET': 
-         
+    if request.method == 'GET':
+
         health = "healthy"
         settings = Settings.get_json_settings()
 
@@ -162,7 +162,7 @@ def status():
 # https://stackoverflow.com/questions/24750137/restarting-host-from-docker-container
 @app.route('/reboot', methods=['GET'])
 def reboot():
-    if request.method == 'GET': 
+    if request.method == 'GET':
         logging.warning("Reboot has been called! There will be no response from this call!")
         try:
             os.system("echo b > /sysrq")
@@ -176,11 +176,16 @@ def page_not_found(e):
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    return jsonify({'response':500, 'description': 'Internal Server Error' + str(e)})        
+    return jsonify({'response':500, 'description': 'Internal Server Error' + str(e)})
 
 if __name__ == '__main__':
-    logger("Welcome to the Scentroom! Scentroom is a working title...")
+    logger("Welcome to the Scentroom!")
     logger("Uploads directory is: " + uploads_dir)
     distance_sensor = DistanceSensor(_FALLBACK_THRESHOLD_DISTANCE)
+    # create content.json file if it doesn't exist
+    content_filename = os.path.join(uploads_dir,_CONTENT_FILENAME)
+    if not os.path.exists(content_filename):
+        f = open(content_filename, "w")
+        f.write("{\n\"real_audio_name\": \"\",\n\"color_hex\": \"#0000ff\"\n}\n")
+        f.close()
     app.run(port=os.environ.get("PORT", "5000"), host='0.0.0.0')
-
