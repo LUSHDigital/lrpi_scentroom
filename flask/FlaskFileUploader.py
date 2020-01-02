@@ -14,14 +14,28 @@ import urllib.request
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib import parse
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Local
 from DistanceSensor import DistanceSensor
 from LightingEvent import LightingEvent
 import Settings
 
+# cli = sys.modules['flask.cli']
+# cli.show_server_banner = lambda *x: None
+
 app = Flask(__name__, static_folder='build/static', template_folder="build")
 logging.basicConfig(level=logging.DEBUG)
+
+scheduler = BackgroundScheduler({
+    'apscheduler.executors.processpool': {
+        'type': 'processpool',
+        'max_workers': '1'
+    }}, timezone="Europe/London")
+
+scheduler.start(paused=False)
+
+distance_sensor = None
 
 # Need cors to resolve cors conflict
 cors = CORS(app)
@@ -55,6 +69,8 @@ def allowed_file(filename):
 def lightingEvent(col_hex_val):
     scentroom_event = LightingEvent(col_hex_val)
     scentroom_event.to_json_file()
+    scentroom_event.to_idle_mp3(uploads_dir)
+    scentroom_event.to_idle_srt(str(uploads_dir))
     return scentroom_event.to_srt(str(uploads_dir))
 
 
@@ -123,8 +139,9 @@ def upload_col():
 @app.route('/test-start', methods=['GET'])
 def testStart():
     if request.method == 'GET':
-        test_distance_sensor = DistanceSensor(None)
-        test_distance_sensor.triggerPlayer(test=True)
+        # test_distance_sensor = DistanceSensor(None, scheduler)
+        # test_distance_sensor.triggerPlayer(test=True)
+        distance_sensor.triggerPlayer(test=True)
         return jsonify({'response': 200, 'message': 'Test started!'})
 
     return jsonify({'response': 500, 'error': 'Something went wrong when trying to START the test'})
@@ -132,9 +149,9 @@ def testStart():
 @app.route('/test-kill', methods=['GET'])
 def testKill():
     if request.method == 'GET':
-
-        test_distance_sensor = DistanceSensor(None)
-        test_distance_sensor.stopPlayer(test=True)
+        # test_distance_sensor = DistanceSensor(None, scheduler)
+        # test_distance_sensor.stopPlayer(test=True)
+        distance_sensor.stopPlayer(test=True)
         return jsonify({'response': 200, 'message': 'Test ended!'})
 
     return jsonify({'response': 500, 'error': 'Something went wrong when trying to KILL the test'})
@@ -173,7 +190,6 @@ def reboot():
 def page_not_found(e):
     return jsonify({'response':404, 'description': 'Page Not Found' + str(e)})
 
-
 @app.errorhandler(500)
 def internal_server_error(e):
     return jsonify({'response':500, 'description': 'Internal Server Error' + str(e)})
@@ -181,11 +197,17 @@ def internal_server_error(e):
 if __name__ == '__main__':
     logger("Welcome to the Scentroom!")
     logger("Uploads directory is: " + uploads_dir)
-    distance_sensor = DistanceSensor(_FALLBACK_THRESHOLD_DISTANCE)
+
+    if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        distance_sensor = DistanceSensor(_FALLBACK_THRESHOLD_DISTANCE, scheduler)
+
     # create content.json file if it doesn't exist
     content_filename = os.path.join(uploads_dir,_CONTENT_FILENAME)
     if not os.path.exists(content_filename):
         f = open(content_filename, "w")
         f.write("{\n\"real_audio_name\": \"\",\n\"color_hex\": \"#0000ff\"\n}\n")
         f.close()
-    app.run(port=os.environ.get("PORT", "5000"), host='0.0.0.0')
+
+    # disabling flask reloader as it triggers apscheduler events twice
+    # https://stackoverflow.com/questions/14874782/apscheduler-in-flask-executes-twice
+    app.run(use_reloader=False, debug=True, port=os.environ.get("PORT", "5000"), host='0.0.0.0')

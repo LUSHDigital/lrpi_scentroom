@@ -3,7 +3,7 @@
 # There's a nice callback structure and all sorts
 # See the "Threshold" example
 
-import time
+import time, datetime
 import urllib.request
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -12,10 +12,8 @@ import requests
 from tinkerforge.ip_connection import IPConnection
 from tinkerforge.bricklet_distance_ir import BrickletDistanceIR
 from tinkerforge.bricklet_distance_ir_v2 import BrickletDistanceIRV2
-from tinkerforge.ip_connection import IPConnection # pylint: disable=import-error
-from tinkerforge.bricklet_dmx import BrickletDMX # pylint: disable=import-error
 from tf_device_ids import deviceIdentifiersList
-from apscheduler.schedulers.background import BackgroundScheduler
+# from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import threading
 import logging
@@ -30,26 +28,29 @@ _DELAY = 20
 _DEBOUNCE_TIME = 8000 # in ms
 _ENTRY_CALLBACK_PERIOD = 200 # in ms
 _EXIT_CALLBACK_PERIOD = 200 # in ms
+DEBUG = True
 
 def logger(message):
     print("DISTANCE SENSOR: " + str(message))
 
 class DistanceSensor:
-    def __init__(self, dist):
+    def __init__(self, dist, scheduler):
         self.threshold_distance = dist
         self.ipcon = None
         self.device = None
         self.tfIDs = []
         self.triggered = False
-        self.thr_start = threading.Thread(target=self.triggerPlayer, args=(1,))
-        self.thr_stop = threading.Thread(target=self.stopPlayer(), args=(1,))
+        # self.thr_start = threading.Thread(target=self.triggerPlayer(), args=(1,))
+        # self.thr_stop = threading.Thread(target=self.stopPlayer(), args=(1,))
         self.deviceIDs = [ i[0] for i in deviceIdentifiersList ]
         self.scheduler = None
+        self.idle_scheduler = None
+        self.idle_job = None
         self.counter = _DELAY
         self.distance = 200.0
-        self.dmx = None
-        self.dmxShow = False
-
+        # self.dmx = None
+        # self.dmxShow = False
+        self.scheduler = scheduler
 
         if dist:
             self.setThresholdFromSettings()
@@ -58,56 +59,6 @@ class DistanceSensor:
             self.poll()
         else:
             logger("Test distance sensor created")
-
-        self.initDMX()
-
-    def initDMX(self):
-        # configure Tinkerforge DMX
-        try:
-            self.ipcon.connect(HOST, PORT)
-
-            # Register Enumerate Callback
-            self.ipcon.register_callback(IPConnection.CALLBACK_ENUMERATE, self.cb_enumerate)
-
-            # Trigger Enumerate
-            self.ipcon.enumerate()
-
-            # Likely wait for the tinkerforge brickd to finish doing its thing
-            sleep(2)
-
-            if DEBUG:
-                print("Tinkerforge enumerated IDs", self.tfIDs)
-
-            dmxcount = 0
-            for tf in self.tfIDs:
-                # try:
-                if True:
-                    # print(len(tf[0]))
-
-                    if len(tf[0])<=3: # if the device UID is 3 characters it is a bricklet
-                        if tf[1] in self.deviceIDs:
-                            if VERBOSE:
-                                print(tf[0],tf[1], self.getIdentifier(tf))
-                        if tf[1] == 285: # DMX Bricklet
-                            if dmxcount == 0:
-                                print("Registering %s as slave DMX device for playing DMX frames" % tf[0])
-                                self.dmx = BrickletDMX(tf[0], self.ipcon)
-                                self.dmx.set_dmx_mode(self.dmx.DMX_MODE_MASTER)
-                                self.dmx.set_frame_duration(DMX_FRAME_DURATION)
-                                # channels = int((int(MAX_BRIGHTNESS)/255.0)*ones(512,)*255)
-                                # dmx.write_frame([255,255])
-                                sleep(1)
-                                # channels = int((int(MAX_BRIGHTNESS)/255.0)*zeros(512,)*255)
-                                # dmx.write_frame(channels)
-                            dmxcount += 1
-
-            if dmxcount < 1:
-                if LIGHTING_MSGS:
-                    print("No DMX devices found.")
-        except Exception as e:
-            print("Could not create connection to Tinkerforge DMX. DMX lighting is now disabled")
-            print("Error: ", e)
-            PLAY_DMX = False
 
     def setThresholdFromSettings(self):
         try:
@@ -136,53 +87,50 @@ class DistanceSensor:
         self.tfIDs.append([uid, device_identifier])
 
     def tick(self):
-        print("Triggered: " + str(self.triggered))
-        print("Distance: " + str(self.distance))
-        print("Counter: " + str(self.counter))
+        if DEBUG:
+            # print("Triggered: " + str(self.triggered) + " | " + "DMX Show: " + str(self.dmxShow) + " | " + "Distance: " + str(self.distance) + " | " + "Counter: " + str(self.counter))
+            print("Triggered: " + str(self.triggered) + " | " + "Distance: " + str(self.distance) + " | " + "Counter: " + str(self.counter))
 
         if self.triggered:
             self.counter = _DELAY
-            self.dmxShow = False
+            # self.dmxShow = False # don't show idle lighting loop
 
         elif not self.triggered:
             self.counter -= 1
             if self.counter == 0:
-                print("Stopping player")
-                self.stopPlayer()
+                if DEBUG:
+                    print("Stopping player")
+                self.stopPlayer() # when the countdown has reached 0, stop the player
+                # self.freePlayer()
+                # self.dmxShow = True # show idle lighting loop
+                # self.triggered = False
                 self.device.set_distance_callback_configuration(_ENTRY_CALLBACK_PERIOD, True, "x", 0, 0)
             if self.counter < 0:
                 self.counter = 0
-                self.dmxShow = True
+                # self.dmxShow = True
 
-    def dmxPlay(self):
-        # print(str(self.dmxShow))
-        if self.dmxShow:
-            m = np.random.rand(1,512)
-            #print(255*m)
-            # print(dir(self.dmx))
-            self.dmx.write_frame(255*m)
-        # self.dmx.write_frame([ int(0.65*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     int(0.40*MAX_BRIGHTNESS),
-        #                     0,0,0,int(0.40*MAX_BRIGHTNESS) ]))
+        # if DEBUG:
+        #     print(str(int(time.time()) % 20))
+        # if self.dmxShow and ((int(time.time()) % 6)==0):# and not self.triggered:
+        #     if DEBUG:
+        #         print("Trigger Idle Lighting Loop")
+        #     # self.triggerPlayer(path="/media/usb/uploads/idle.mp3", start_position=0, test=True)
+        #     # time.sleep(10)
+        #     # self.stopPlayer(test=True)
+        #     # self.rebootPlayer()
+        #     self.idlePlayer()
 
     def poll(self):
-
         self.ipcon = IPConnection() # Create IP connection
         self.ipcon.connect(HOST, PORT) # Connect to brickd
         self.ipcon.register_callback(IPConnection.CALLBACK_ENUMERATE, self.cb_enumerate)
 
-        # Trigger Enumerate
+        # Trigger TinkerForge enumerate function
         self.ipcon.enumerate()
 
         time.sleep(0.7)
 
+        # Autodetect TinkerForge bricklets
         for tf in self.tfIDs:
             if len(tf[0])<=3: # if the device UID is 3 characters it is a bricklet
                 if tf[1] in self.deviceIDs:
@@ -206,14 +154,16 @@ class DistanceSensor:
 
                         self.device.set_distance_callback_configuration(_ENTRY_CALLBACK_PERIOD, True, "x", 0, 0)
 
-                    self.scheduler = BackgroundScheduler({
-                        'apscheduler.executors.processpool': {
-                            'type': 'processpool',
-                            'max_workers': '1'
-                        }}, timezone="Europe/London")
-                    self.scheduler.add_job(self.tick, 'interval', seconds=_TICK_TIME, misfire_grace_time=5  , max_instances=1, coalesce=False)
-                    self.scheduler.add_job(self.dmxPlay, 'interval', seconds=0.1, misfire_grace_time=5  , max_instances=1, coalesce=False)
-                    self.scheduler.start(paused=False)
+
+                    # self.scheduler = BackgroundScheduler({
+                    #     'apscheduler.executors.processpool': {
+                    #         'type': 'processpool',
+                    #         'max_workers': '1'
+                    #     }}, timezone="Europe/London")
+                    self.scheduler.add_job(self.tick, 'interval', seconds=_TICK_TIME, misfire_grace_time=None , max_instances=1, coalesce=True, start_date = datetime.datetime.now()+datetime.timedelta(0,2,0))
+                    # self.scheduler.add_job(self.tick, 'cron', second=_TICK_TIME, misfire_grace_time=None , max_instances=1, coalesce=False)
+                    # self.scheduler.start(paused=False)
+
                     logging.getLogger('apscheduler').setLevel(logging.CRITICAL)
 
 
@@ -261,24 +211,51 @@ class DistanceSensor:
                             'start_position': str(start_position), \
                         }
 
-                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
-                print("INFO: res from start: ", playerRes)
+                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-trigger', json=postFields)
+                print("INFO: response from start: ", playerRes)
         except Exception as e:
             logging.error("HTTP issue with player trigger")
             print("Why: ", e)
 
     def stopPlayer(self, test=False):
         try:
-            if not self.triggered or test :
+            if not self.triggered or test:
                 postFields = { \
                             'trigger': "stop" \
                         }
 
-                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
-                print("INFO: res from stop: ", playerRes)
+                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-trigger', json=postFields)
+                print("INFO: response from stop: ", playerRes)
         except Exception as e:
             logging.error("HTTP issue with player stop")
+            print("Why: ", e)
 
+    def freePlayer(self):
+        try:
+            if not self.triggered or test:
+                playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/free')
+                print("INFO: response from free: ", playerRes)
+        except Exception as e:
+            logging.error("HTTP issue with player stop")
+            print("Why: ", e)
+
+    def rebootPlayer(self):
+        try:
+            if not self.triggered or test:
+                playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-reboot')
+                print("INFO: response from reboot: ", playerRes)
+        except Exception as e:
+            logging.error("HTTP issue with player stop")
+            print("Why: ", e)
+
+    def idlePlayer(self):
+        try:
+            if not self.triggered or test:
+                playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-idle')
+                print("INFO: response from idle: ", playerRes)
+        except Exception as e:
+            logging.error("HTTP issue with player stop")
+            print("Why: ", e)
 
     def __del__(self):
         try:
