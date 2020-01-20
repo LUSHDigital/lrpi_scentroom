@@ -123,7 +123,7 @@ def upload_file():
 def upload_col():
     if request.method == 'POST':
 
-        #Get col value from form data
+        # Get col value from form data
         colour = request.form.get('colour')
 
         if colour is not None:
@@ -199,6 +199,7 @@ if __name__ == '__main__':
     logger("Uploads directory is: " + uploads_dir)
 
     if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        logger("Creating distance sensor...")
         distance_sensor = DistanceSensor(_FALLBACK_THRESHOLD_DISTANCE, scheduler)
 
     # create content.json file if it doesn't exist

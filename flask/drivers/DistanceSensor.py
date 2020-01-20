@@ -40,8 +40,6 @@ class DistanceSensor:
         self.device = None
         self.tfIDs = []
         self.triggered = False
-        # self.thr_start = threading.Thread(target=self.triggerPlayer(), args=(1,))
-        # self.thr_stop = threading.Thread(target=self.stopPlayer(), args=(1,))
         self.deviceIDs = [ i[0] for i in deviceIdentifiersList ]
         self.scheduler = None
         self.idle_scheduler = None
@@ -230,31 +228,22 @@ class DistanceSensor:
             logging.error("HTTP issue with player stop")
             print("Why: ", e)
 
-    def freePlayer(self):
-        try:
-            if not self.triggered or test:
-                playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/free')
-                print("INFO: response from free: ", playerRes)
-        except Exception as e:
-            logging.error("HTTP issue with player stop")
-            print("Why: ", e)
-
     def rebootPlayer(self):
         try:
-            if not self.triggered or test:
+            if not self.triggered:
                 playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-reboot')
                 print("INFO: response from reboot: ", playerRes)
         except Exception as e:
-            logging.error("HTTP issue with player stop")
+            logging.error("HTTP issue with player reboot")
             print("Why: ", e)
 
     def idlePlayer(self):
         try:
-            if not self.triggered or test:
+            if not self.triggered:
                 playerRes = requests.get('http://localhost:' + os.environ.get("PLAYER_PORT", "80") + '/scentroom-idle')
                 print("INFO: response from idle: ", playerRes)
         except Exception as e:
-            logging.error("HTTP issue with player stop")
+            logging.error("HTTP issue with player idle")
             print("Why: ", e)
 
     def __del__(self):

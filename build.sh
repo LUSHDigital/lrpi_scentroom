@@ -1,5 +1,5 @@
 # lushroom-scentroom Dockerfile
-BUILD_NAME=latest
+BUILD_NAME=staging
 
 sudo docker build -t lushroom-scentroom . && \
 sudo docker images && \
