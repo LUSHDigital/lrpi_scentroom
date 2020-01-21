@@ -107,6 +107,7 @@ class DistanceSensor:
 
         if self.threshold_distance:
             self.poll()
+            self.machine.state = SensorStates.IDLE
         else:
             logging.info("Test distance sensor created")
 
