@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib import parse
 import requests
+from enum import Enum
 from tinkerforge.ip_connection import IPConnection
 from tinkerforge.bricklet_distance_ir import BrickletDistanceIR
 from tinkerforge.bricklet_distance_ir_v2 import BrickletDistanceIRV2
@@ -19,16 +20,69 @@ import threading
 import logging
 import Settings
 
+logging.basicConfig(level=logging.INFO)
 HOST = os.environ.get("BRICKD_HOST", "127.0.0.1")
 PORT = 4223
 _TICK_TIME = 1
-_DELAY = 20
-_DEBOUNCE_TIME = 8000 # in ms
+_DELAY = 5
+_DEBOUNCE_TIME = 300 # in ms
 _ENTRY_CALLBACK_PERIOD = 200 # in ms
 _EXIT_CALLBACK_PERIOD = 200 # in ms
 
-def logger(message):
-    print("DISTANCE SENSOR: " + str(message))
+# Observer this, do something when the state changes rather than
+# setting random flags everywhere that are impossible to track
+
+class SensorStates(Enum):
+    IDLE = 1
+    TRIGGERED = 2
+    UNTRIGGERED = 3
+    WAITING = 4
+
+class StateMachine(object):
+    def __init__(self):
+        self._state = SensorStates.IDLE
+        self._observers = []
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        self._state = value
+        for callback in self._observers:
+            callback(self._state)
+
+    def bind_to(self, callback):
+        self._observers.append(callback)
+
+class StateWatch(object):
+    def __init__(self, sm, counter, idle, trigger, stop):
+        self.sm = sm
+        self.counter = counter
+        self.trigger = trigger
+        self.stop = stop
+        self.idle = idle
+        self.sm.bind_to(self.stateUpdated)
+
+    def stateUpdated(self, state):
+        print("state changed to: ", state)
+
+        if state == SensorStates.TRIGGERED:
+            print('Change state to WAITING...')
+            self.trigger()
+
+        if state == SensorStates.UNTRIGGERED:
+            print('Untriggered, stopping...')
+            self.stop()
+
+        if state == SensorStates.IDLE:
+            print('Idling, fire off the idleloop request here')
+            self.idle()
+
+        if state == SensorStates.WAITING:
+            print('Counting down...')
+            print('Triggered, start the count down from ', _DELAY)
 
 class DistanceSensor:
     def __init__(self, dist):
@@ -37,12 +91,16 @@ class DistanceSensor:
         self.device = None
         self.tfIDs = []
         self.triggered = False
-        self.thr_start = threading.Thread(target=self.triggerPlayer, args=(1,))
-        self.thr_stop = threading.Thread(target=self.stopPlayer(), args=(1,))
+        self.delay_stop = False
         self.deviceIDs = [ i[0] for i in deviceIdentifiersList ]
         self.scheduler = None
         self.counter = _DELAY
         self.distance = 200.0
+
+        # Observer/subject
+        # Start the machine in IDLE mode
+        self.machine = StateMachine()
+        self.state_watcher = StateWatch(self.machine, self.counter, self.startIdle, self.triggerPlayer, self.stopPlayer)
 
         if dist:
             self.setThresholdFromSettings()
@@ -50,15 +108,15 @@ class DistanceSensor:
         if self.threshold_distance:
             self.poll()
         else:
-            logger("Test distance sensor created")
+            logging.info("Test distance sensor created")
 
     def setThresholdFromSettings(self):
         try:
             d = self.loadSettings()
             self.threshold_distance = d
-            logger("Threshold set to: " + str(d) + "cm")
+            logging.info("Threshold set to: " + str(d) + "cm")
         except Exception as e:
-            logger("ERROR: could not get distance setting from the usb stick, using default value ..." + e)
+            logging.info("ERROR: could not get distance setting from the usb stick, using default value ..." + e)
 
     def getIdentifier(self, ID):
         deviceType = ""
@@ -78,22 +136,30 @@ class DistanceSensor:
                     device_identifier, enumeration_type):
         self.tfIDs.append([uid, device_identifier])
 
-    def tick(self):
-        print("Triggered: " + str(self.triggered))
-        print("Distance: " + str(self.distance))
-        print("Counter: " + str(self.counter))
+    # Callback function for distance polling
+    # Is only called if the distance has changed within _CALLBACK_PERIOD
 
-        if self.triggered:
+    # This is essentially where the state transition table is...
+
+    def cb_distance(self, distance):
+        logging.info("Distance: " + str(distance/10.0) + " cm")
+        d = distance/10.0
+        self.distance = d
+        if d < self.threshold_distance:
+            if self.machine.state == SensorStates.IDLE: self.machine.state = SensorStates.TRIGGERED
+            if self.machine.state == SensorStates.WAITING: self.machine.state = SensorStates.WAITING
+            if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.TRIGGERED
             self.counter = _DELAY
+        elif d > self.threshold_distance:
+            if self.machine.state == SensorStates.TRIGGERED: self.machine.state = SensorStates.WAITING
+            if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.IDLE
 
-        elif not self.triggered:
+    def tick(self):
+        print('in tick, counter: ', self.counter)
+        if self.machine.state == SensorStates.WAITING:
             self.counter -= 1
-            if self.counter < 0:
-                print("Stopping player")
-                self.stopPlayer()
-                self.device.set_distance_callback_configuration(_ENTRY_CALLBACK_PERIOD, True, "x", 0, 0)
-            if self.counter < 0:
-                self.counter = 0
+            if self.counter <= 0:
+               self.machine.state = SensorStates.UNTRIGGERED
 
     def poll(self):
 
@@ -103,7 +169,6 @@ class DistanceSensor:
 
         # Trigger Enumerate
         self.ipcon.enumerate()
-
         time.sleep(0.7)
 
         for tf in self.tfIDs:
@@ -118,15 +183,13 @@ class DistanceSensor:
                         self.device.register_callback(self.device.CALLBACK_DISTANCE, self.cb_distance)
 
                         # Get threshold callbacks with a debounce time of 10 seconds (10000ms)
-                        # self.device.set_debounce_period(_DEBOUNCE_TIME)
                         self.device.set_distance_callback_period(_ENTRY_CALLBACK_PERIOD)
                     elif tf[1] == 2125: # DISTANCE IR BRICKLET V2.0
                         print("Registering %s as active Distance IR sensor 2.0" % tf[0])
                         self.device = BrickletDistanceIRV2(tf[0], self.ipcon) # Create device object
                         # Don't use device before ipcon is connected
 
-                        self.device.register_callback(self.device.CALLBACK_DISTANCE, self.cb_distance_v2)
-
+                        self.device.register_callback(self.device.CALLBACK_DISTANCE, self.cb_distance)
                         self.device.set_distance_callback_configuration(_ENTRY_CALLBACK_PERIOD, True, "x", 0, 0)
 
                     self.scheduler = BackgroundScheduler({
@@ -147,67 +210,40 @@ class DistanceSensor:
         #     print("Why:", e)
         #     self.__del__()
 
-    # Callback function for distance polling
-    # Is only called if the distance has changed within _CALLBACK_PERIOD
-
-    def cb_distance(self, distance):
-        logger("Distance: " + str(distance/10.0) + " cm")
-        d = distance/10.0
-        t = None
-        self.distance = d
-        if d <= self.threshold_distance:
-            self.triggerPlayer()
-            self.device.set_distance_callback_period(_EXIT_CALLBACK_PERIOD)
-            self.triggered = True
-        elif d > self.threshold_distance:
-            self.triggered = False
-
-    def cb_distance_v2(self, distance):
-        logger("Distance: " + str(distance/10.0) + " cm")
-        d = distance/10.0
-        t = None
-        self.distance = d
-        if d <= self.threshold_distance:
-            self.triggerPlayer()
-            self.device.set_distance_callback_configuration(_EXIT_CALLBACK_PERIOD, True, "x", 0, 0)
-            self.triggered = True
-        elif ( d > self.threshold_distance ):
-            self.triggered = False
-
     def triggerPlayer(self, path="/media/usb/uploads/01_scentroom.mp3", start_position=0, test=False):
         try:
-            if self.triggered or test:
-                postFields = { \
-                            'trigger' : "start", \
-                            'upload_path': str(path), \
-                            'start_position': str(start_position), \
-                        }
+            postFields = { \
+                        'trigger' : "start", \
+                        'upload_path': str(path), \
+                        'start_position': str(start_position), \
+                    }
 
-                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
-                print("INFO: res from start: ", playerRes)
+            playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
+            print("INFO: res from start: ", playerRes)
         except Exception as e:
             logging.error("HTTP issue with player trigger")
-            print("Why: ", e)
+            logging.error(e)
 
     def stopPlayer(self, test=False):
         try:
-            if not self.triggered or test :
-                postFields = { \
-                            'trigger': "stop" \
-                        }
+            postFields = { \
+                'trigger': "stop" \
+            }
 
-                playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
-                print("INFO: res from stop: ", playerRes)
+            playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
+            print("INFO: res from stop: ", playerRes)
         except Exception as e:
             logging.error("HTTP issue with player stop")
+            logging.error(e)
 
+    def startIdle(self):
+        print("idle loop started...")
 
     def __del__(self):
         try:
             self.ipcon.disconnect()
         except Exception as e:
-            logger("Cannot destroy the Tinkerforge IP connection gracefully...")
+            logging.error("Cannot destroy the Tinkerforge IP connection gracefully...")
             print("Why: ", e)
-            logger("It's likely there was no connection to begin with!")
-            logger("Distance sensor ")
+            logging.error("It's likely there was no connection to begin with!")
         self.device = None
