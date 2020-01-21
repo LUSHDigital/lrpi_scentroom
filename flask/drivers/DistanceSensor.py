@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 HOST = os.environ.get("BRICKD_HOST", "127.0.0.1")
 PORT = 4223
 _TICK_TIME = 1
-_DELAY = 5
+_DELAY = 20
 _DEBOUNCE_TIME = 300 # in ms
 _ENTRY_CALLBACK_PERIOD = 200 # in ms
 _EXIT_CALLBACK_PERIOD = 200 # in ms
@@ -77,6 +77,7 @@ class StateWatch(object):
         if state == SensorStates.UNTRIGGERED:
             print('Untriggered, stopping...')
             self.stop()
+            self.sm.state = SensorStates.IDLE
 
         if state == SensorStates.IDLE:
             print('Idling, fire off the idleloop request here')
@@ -157,7 +158,6 @@ class DistanceSensor:
         elif d > self.threshold_distance:
             if self.machine.state == SensorStates.TRIGGERED: self.machine.state = SensorStates.WAITING
             if self.machine.state == SensorStates.RETRIGGERED: self.machine.state = SensorStates.WAITING
-            if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.IDLE
 
     def tick(self):
         if self.machine.state == SensorStates.WAITING:
