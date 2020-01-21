@@ -37,6 +37,7 @@ class SensorStates(Enum):
     TRIGGERED = 2
     UNTRIGGERED = 3
     WAITING = 4
+    RETRIGGERED = 5
 
 class StateMachine(object):
     def __init__(self):
@@ -57,9 +58,8 @@ class StateMachine(object):
         self._observers.append(callback)
 
 class StateWatch(object):
-    def __init__(self, sm, counter, idle, trigger, stop):
+    def __init__(self, sm, idle, trigger, stop):
         self.sm = sm
-        self.counter = counter
         self.trigger = trigger
         self.stop = stop
         self.idle = idle
@@ -69,7 +69,9 @@ class StateWatch(object):
         print("state changed to: ", state)
 
         if state == SensorStates.TRIGGERED:
+            print('Remove any idle job...')
             print('Change state to WAITING...')
+            print('Start the player...')
             self.trigger()
 
         if state == SensorStates.UNTRIGGERED:
@@ -100,7 +102,7 @@ class DistanceSensor:
         # Observer/subject
         # Start the machine in IDLE mode
         self.machine = StateMachine()
-        self.state_watcher = StateWatch(self.machine, self.counter, self.startIdle, self.triggerPlayer, self.stopPlayer)
+        self.state_watcher = StateWatch(self.machine, self.startIdle, self.triggerPlayer, self.stopPlayer)
 
         if dist:
             self.setThresholdFromSettings()
@@ -148,15 +150,17 @@ class DistanceSensor:
         self.distance = d
         if d < self.threshold_distance:
             if self.machine.state == SensorStates.IDLE: self.machine.state = SensorStates.TRIGGERED
-            if self.machine.state == SensorStates.WAITING: self.machine.state = SensorStates.WAITING
             if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.TRIGGERED
-            self.counter = _DELAY
+            if self.machine.state == SensorStates.WAITING: self.machine.state = SensorStates.RETRIGGERED
+            if self.machine.state == SensorStates.RETRIGGERED:  self.counter = _DELAY
         elif d > self.threshold_distance:
             if self.machine.state == SensorStates.TRIGGERED: self.machine.state = SensorStates.WAITING
+            if self.machine.state == SensorStates.RETRIGGERED: self.machine.state = SensorStates.WAITING
             if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.IDLE
 
     def tick(self):
         print('in tick, counter: ', self.counter)
+
         if self.machine.state == SensorStates.WAITING:
             self.counter -= 1
             if self.counter <= 0:
