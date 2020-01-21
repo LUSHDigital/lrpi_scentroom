@@ -20,7 +20,10 @@ import threading
 import logging
 import Settings
 
+
+LOGGER = logging.getLogger('DistanceSensor')
 logging.basicConfig(level=logging.INFO)
+
 HOST = os.environ.get("BRICKD_HOST", "127.0.0.1")
 PORT = 4223
 _TICK_TIME = 1
@@ -66,16 +69,15 @@ class StateWatch(object):
         self.sm.bind_to(self.stateUpdated)
 
     def stateUpdated(self, state):
-        print("state changed to: ", state)
+        LOGGER.info("******************* " + str(state) + " *******************")
 
         if state == SensorStates.TRIGGERED:
-            print('Remove any idle job...')
-            print('Change state to WAITING...')
-            print('Start the player...')
             self.trigger()
 
+        if state == SensorStates.RETRIGGERED:
+            pass
+
         if state == SensorStates.UNTRIGGERED:
-            print('Untriggered, stopping...')
             self.stop()
             self.sm.state = SensorStates.IDLE
 
@@ -84,8 +86,7 @@ class StateWatch(object):
             self.idle()
 
         if state == SensorStates.WAITING:
-            print('Counting down...')
-            print('Triggered, start the count down from ', _DELAY)
+            pass
 
 class DistanceSensor:
     def __init__(self, dist):
@@ -112,15 +113,15 @@ class DistanceSensor:
             self.poll()
             self.machine.state = SensorStates.IDLE
         else:
-            logging.info("Test distance sensor created")
+            LOGGER.info("Test distance sensor created")
 
     def setThresholdFromSettings(self):
         try:
             d = self.loadSettings()
             self.threshold_distance = d
-            logging.info("Threshold set to: " + str(d) + "cm")
+            LOGGER.info("Threshold set to: " + str(d) + "cm")
         except Exception as e:
-            logging.info("ERROR: could not get distance setting from the usb stick, using default value ..." + e)
+            LOGGER.info("ERROR: could not get distance setting from the usb stick, using default value ..." + e)
 
     def getIdentifier(self, ID):
         deviceType = ""
@@ -146,7 +147,7 @@ class DistanceSensor:
     # This is essentially where the state transition table is...
 
     def cb_distance(self, distance):
-        logging.info("Distance: " + str(distance/10.0) + " cm")
+        LOGGER.info("Distance: " + str(distance/10.0) + " cm")
         d = distance/10.0
         self.distance = d
         if d < self.threshold_distance:
@@ -162,7 +163,7 @@ class DistanceSensor:
     def tick(self):
         if self.machine.state == SensorStates.WAITING:
             self.counter -= 1
-            print('Counting down: ', self.counter)
+            LOGGER.info('Sending STOP in: ' + str(self.counter))
             if self.counter <= 0:
                self.machine.state = SensorStates.UNTRIGGERED
 
@@ -226,8 +227,8 @@ class DistanceSensor:
             playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
             print("INFO: res from start: ", playerRes)
         except Exception as e:
-            logging.error("HTTP issue with player trigger")
-            logging.error(e)
+            LOGGER.error("HTTP issue with player trigger")
+            LOGGER.error(e)
 
     def stopPlayer(self, test=False):
         try:
@@ -238,11 +239,11 @@ class DistanceSensor:
             playerRes = requests.post('http://localhost:' + os.environ.get("PLAYER_PORT", "8080") + '/scentroom-trigger', json=postFields)
             print("INFO: res from stop: ", playerRes)
         except Exception as e:
-            logging.error("HTTP issue with player stop")
-            logging.error(e)
+            LOGGER.error("HTTP issue with player stop")
+            LOGGER.error(e)
 
     def startIdle(self):
-        print("idle loop started...")
+        LOGGER.info("dummy idle loop started...")
 
     def __del__(self):
         try:
