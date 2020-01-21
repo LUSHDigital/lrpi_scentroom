@@ -153,16 +153,16 @@ class DistanceSensor:
             if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.TRIGGERED
             if self.machine.state == SensorStates.WAITING: self.machine.state = SensorStates.RETRIGGERED
             if self.machine.state == SensorStates.RETRIGGERED:  self.counter = _DELAY
+            if self.machine.state == SensorStates.TRIGGERED:  self.counter = _DELAY
         elif d > self.threshold_distance:
             if self.machine.state == SensorStates.TRIGGERED: self.machine.state = SensorStates.WAITING
             if self.machine.state == SensorStates.RETRIGGERED: self.machine.state = SensorStates.WAITING
             if self.machine.state == SensorStates.UNTRIGGERED: self.machine.state = SensorStates.IDLE
 
     def tick(self):
-        print('in tick, counter: ', self.counter)
-
         if self.machine.state == SensorStates.WAITING:
             self.counter -= 1
+            print('Counting down: ', self.counter)
             if self.counter <= 0:
                self.machine.state = SensorStates.UNTRIGGERED
 
